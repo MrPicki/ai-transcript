@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Transcript - Mötesanteckningar</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+        .container {
+            max-width: 640px;
+            width: 100%;
+        }
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .drop-zone {
+            border: 2px dashed #aaa;
+            border-radius: 8px;
+            padding: 3rem 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            background: #fff;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .drop-zone.dragover {
+            border-color: #2563eb;
+            background: #eff6ff;
+        }
+        .drop-zone p { margin-bottom: 0.5rem; }
+        .drop-zone .hint { font-size: 0.85rem; color: #888; }
+        .file-name {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #555;
+        }
+        .btn {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.6rem 1.6rem;
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .btn:disabled {
+            background: #93b4f5;
+            cursor: not-allowed;
+        }
+        .spinner {
+            display: none;
+            margin-top: 1.5rem;
+            text-align: center;
+            color: #555;
+        }
+        .spinner.active { display: block; }
+        .spinner::before {
+            content: "";
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #ccc;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .result {
+            display: none;
+            margin-top: 1.5rem;
+        }
+        .result.active { display: block; }
+        .result label {
+            font-weight: 600;
+            display: block;
+            margin-bottom: 0.4rem;
+        }
+        .result textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 0.75rem;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            resize: vertical;
+            font-family: inherit;
+        }
+        .copy-btn {
+            margin-top: 0.5rem;
+            padding: 0.4rem 1rem;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .error {
+            margin-top: 1rem;
+            color: #dc2626;
+            display: none;
+        }
+        .error.active { display: block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Transcript</h1>
+
+        <div class="drop-zone" id="dropZone">
+            <p>Dra och släpp en ljudfil här</p>
+            <p class="hint">eller klicka för att välja fil (mp3, wav, m4a, webm — max 25 MB)</p>
+            <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.webm" hidden>
+        </div>
+
+        <div class="file-name" id="fileName"></div>
+
+        <button class="btn" id="transcribeBtn" disabled>Transkribera</button>
+
+        <div class="spinner" id="spinner">Transkriberar...</div>
+        <div class="error" id="error"></div>
+
+        <div class="result" id="result">
+            <label for="transcript">Transkription</label>
+            <textarea id="transcript" readonly></textarea>
+            <button class="copy-btn" id="copyBtn">Kopiera text</button>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById("dropZone");
+        const fileInput = document.getElementById("fileInput");
+        const fileNameEl = document.getElementById("fileName");
+        const transcribeBtn = document.getElementById("transcribeBtn");
+        const spinner = document.getElementById("spinner");
+        const errorEl = document.getElementById("error");
+        const resultEl = document.getElementById("result");
+        const transcript = document.getElementById("transcript");
+        const copyBtn = document.getElementById("copyBtn");
+
+        let selectedFile = null;
+
+        dropZone.addEventListener("click", () => fileInput.click());
+
+        dropZone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dropZone.classList.add("dragover");
+        });
+
+        dropZone.addEventListener("dragleave", () => {
+            dropZone.classList.remove("dragover");
+        });
+
+        dropZone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dropZone.classList.remove("dragover");
+            if (e.dataTransfer.files.length) {
+                selectFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener("change", () => {
+            if (fileInput.files.length) {
+                selectFile(fileInput.files[0]);
+            }
+        });
+
+        function selectFile(file) {
+            selectedFile = file;
+            fileNameEl.textContent = file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + " MB)";
+            transcribeBtn.disabled = false;
+            errorEl.classList.remove("active");
+            resultEl.classList.remove("active");
+        }
+
+        transcribeBtn.addEventListener("click", async () => {
+            if (!selectedFile) return;
+
+            transcribeBtn.disabled = true;
+            spinner.classList.add("active");
+            errorEl.classList.remove("active");
+            resultEl.classList.remove("active");
+
+            const formData = new FormData();
+            formData.append("file", selectedFile);
+
+            try {
+                const res = await fetch("/transcribe", { method: "POST", body: formData });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || "Något gick fel");
+                }
+
+                transcript.value = data.text;
+                resultEl.classList.add("active");
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.classList.add("active");
+            } finally {
+                spinner.classList.remove("active");
+                transcribeBtn.disabled = false;
+            }
+        });
+
+        copyBtn.addEventListener("click", () => {
+            navigator.clipboard.writeText(transcript.value).then(() => {
+                copyBtn.textContent = "Kopierad!";
+                setTimeout(() => { copyBtn.textContent = "Kopiera text"; }, 2000);
+            });
+        });
+    </script>
+</body>
+</html>
